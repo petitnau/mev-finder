@@ -145,32 +145,40 @@ opAt (Program (x:_)) 0 = x
 opAt (Program ((PUSH s _):xs)) n = opAt (Program xs) (n-s-1) 
 opAt (Program (_:xs)) n = opAt (Program xs) (n-1) 
 
-pop :: State -> Maybe State
-pop s@State{stack = a:r} = Just s{stack=r, pc=s.pc+1}
+data Result 
+    = Returned BA.Bytes 
+    | Reverted
+instance Show Result where
+    show (Returned ba) = Text.unpack . encodeHex . BA.pack . BA.unpack $ ba
+    show (Reverted) = "Reverted"
 
-push :: (Uint256) -> State -> Maybe State
-push v s@State{stack = r} = Just s{stack=v:r, pc=s.pc+1}
+pop :: State -> Either Result State
+pop s@State{stack = a:r} = Right s{stack=r, pc=s.pc+1}
+pop _ = Left Reverted
 
-semuop :: (Uint256 -> Uint256) -> State -> Maybe State
-semuop op s@State{stack = a:r} = Just s{stack=op a:r, pc=s.pc+1}
-semuop _ _ = Nothing
+push :: (Uint256) -> State -> Either Result State
+push v s@State{stack = r} = Right s{stack=v:r, pc=s.pc+1}
 
-sembop :: (Uint256 -> Uint256 -> Uint256) -> State -> Maybe State
-sembop op s@State{stack = a:b:r} = Just s{stack=op a b:r, pc=s.pc+1}
-sembop _ _ = Nothing
+semuop :: (Uint256 -> Uint256) -> State -> Either Result State
+semuop op s@State{stack = a:r} = Right s{stack=op a:r, pc=s.pc+1}
+semuop _ _ = Left Reverted
 
-semtop :: (Uint256 -> Uint256 -> Uint256 -> Uint256) -> State -> Maybe State
-semtop op s@State{stack = a:b:c:r} = Just s{stack=op a b c:r, pc=s.pc+1}
-semtop _ _ = Nothing
+sembop :: (Uint256 -> Uint256 -> Uint256) -> State -> Either Result State
+sembop op s@State{stack = a:b:r} = Right s{stack=op a b:r, pc=s.pc+1}
+sembop _ _ = Left Reverted
 
-sem :: State -> Maybe State
+semtop :: (Uint256 -> Uint256 -> Uint256 -> Uint256) -> State -> Either Result State
+semtop op s@State{stack = a:b:c:r} = Right s{stack=op a b c:r, pc=s.pc+1}
+semtop _ _ = Left Reverted
+
+sem :: State -> Either Result State
 sem s = do
     s1 <- sem1 (traceShowId s) 
     sem s1
 
-sem1 :: State -> Maybe State
+sem1 :: State -> Either Result State
 sem1 s = case traceShowId $ s.program `opAt` s.pc of
-        STOP            -> Nothing
+        STOP            -> Left (Returned mempty)
         ADD             -> sembop (+) s
         MUL             -> sembop (*) s
         SUB             -> sembop (-) s
@@ -221,20 +229,21 @@ sem1 s = case traceShowId $ s.program `opAt` s.pc of
         BASEFEE         -> error "BASEFEE NOT IMPLEMENTED"
         POP             -> pop s
         MLOAD           -> semuop (getWord s.memory . fromIntegral) s
-        MSTORE          -> case s.stack of off:val:r -> Just s{stack=r, memory=updateBytes s.memory (fromWord val) (fromIntegral off), pc=s.pc+1}; _  -> error "fuck"
-        MSTORE8         -> case s.stack of off:val:r -> Just s{stack=r, memory=updateBytes s.memory (BA.pack [lowestByte val]) (fromIntegral off), pc=s.pc+1}; _  -> error "fuck"
+        MSTORE          -> case s.stack of off:val:r -> Right s{stack=r, memory=updateBytes s.memory (fromWord val) (fromIntegral off), pc=s.pc+1}; _  -> error "fuck"
+        MSTORE8         -> case s.stack of off:val:r -> Right s{stack=r, memory=updateBytes s.memory (BA.pack [lowestByte val]) (fromIntegral off), pc=s.pc+1}; _  -> error "fuck"
         SLOAD           -> semuop (get s.storage) s
-        SSTORE          -> case s.stack of key:val:r -> Just s{stack=r, storage=bind s.storage (key, val), pc=s.pc+1}; _  -> error "fuck"
-        JUMP            -> case s.stack of loc:r -> Just s{stack=r, pc=fromIntegral loc}; _  -> error "fuck"
-        JUMPI           -> case s.stack of loc:b:r -> if toBool b then Just s{stack=r, pc=fromIntegral loc} else Just s{pc=s.pc+1}; _  -> error "fuck"
+        SSTORE          -> case s.stack of key:val:r -> Right s{stack=r, storage=bind s.storage (key, val), pc=s.pc+1}; _  -> error "fuck"
+        JUMP            -> case s.stack of loc:r -> Right s{stack=r, pc=fromIntegral loc}; _  -> error "fuck"
+        JUMPI           -> case s.stack of loc:b:r -> if toBool b then Right s{stack=r, pc=fromIntegral loc} else Right s{pc=s.pc+1}; _  -> error "fuck"
         PC              -> push (fromIntegral s.pc) s
         MSIZE           -> push (fromIntegral $ BA.length s.memory) s
         GAS             -> error "GAS NOT IMPLEMENTED"
-        JUMPDEST        -> Just s{pc=s.pc+1}
+        JUMPDEST        -> Right s{pc=s.pc+1}
         PUSH size v     -> push (fromIntegral v) s{pc=s.pc + size}
         DUP i           -> push (s.stack !! (i-1)) s
         SWAP i          -> 
             let (a,l1,b,l2) = (s.stack!!0, take (i-1) . drop 1 $ s.stack, s.stack!!i, drop (i+1) s.stack) in
-                Just s{stack=b:l1 ++ a:l2, pc=s.pc+1}
-        REVERT          -> Nothing
+                Right s{stack=b:l1 ++ a:l2, pc=s.pc+1}
+        REVERT          -> Left Reverted
+        RETURN          -> case s.stack of off:size:_ -> Left (Returned (takeExt (fromIntegral size) . BA.drop (fromIntegral off) $ s.memory)); _ -> error "fuck"
         x               -> error (show x ++ " NOT IMPLEMENTED")
