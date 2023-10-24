@@ -5,7 +5,7 @@ module Ast where
 import Uint256
 import Data.Composition
 import qualified Data.ByteArray as BA
-import Text.Hex
+import Text.Hex ( encodeHex )
 import qualified Data.Text as Text
 import Data.Function.Syntax
 import Data.Bits hiding (And, Or, Xor)
@@ -13,6 +13,7 @@ import Prelude hiding (EQ, GT, LT)
 import Memory 
 import Env
 import Data.Maybe (fromJust)
+import Utils (printMem)
 
 import Debug.Trace
 
@@ -135,8 +136,8 @@ data State = State
 
 instance Show State where
     show s = 
-        "callData = " ++ (Text.unpack . encodeHex . BA.pack . BA.unpack $ s.callState.callData) ++ "\n" ++
-        "memory   = " ++ (Text.unpack . encodeHex . BA.pack . BA.unpack $ s.memory) ++ "\n" ++
+        "callData = " ++ (printMem . Text.unpack . encodeHex . BA.pack . BA.unpack $ s.callState.callData) ++ "\n" ++
+        "memory   = " ++ (printMem . Text.unpack . encodeHex . BA.pack . BA.unpack $ s.memory) ++ "\n" ++
         "stack    = " ++ show s.stack ++ "\n"
 
 opAt :: Program -> Int -> Ast
