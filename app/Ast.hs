@@ -150,7 +150,7 @@ data Result
     = Returned BA.Bytes 
     | Reverted
 instance Show Result where
-    show (Returned ba) = Text.unpack . encodeHex . BA.pack . BA.unpack $ ba
+    show (Returned ba) = printMem . Text.unpack . encodeHex . BA.pack . BA.unpack $ ba
     show (Reverted) = "Reverted"
 
 pop :: State -> Either Result State

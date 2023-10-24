@@ -9,7 +9,7 @@ modExp b e m = t * modExp ((b * b) `mod` m) (shiftR e 1) m `mod` m
 
 
 printMem :: String -> String
-printMem = (++) "\n" . insert 50 '\n' . insert 24 '|' . insert 2 ' '
+printMem = (++) "\n" . insert 100 '\n' . insert 24 '|' . insert 2 ' '
     where
         insert :: Int -> Char -> String -> String
         insert 0 y xs = xs
