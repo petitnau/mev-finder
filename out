@@ -1,0 +1,86 @@
+
+app/Main.hs:62:13: error:
+    • Couldn't match expected type ‘BlockInfo’
+                  with actual type ‘a2 -> c0’
+    • Probable cause: ‘(.)’ is applied to too few arguments
+      In the ‘block’ field of a record
+      In the expression:
+        s {block = s . block {balances = Env.bind s . block . balances kv}}
+      In an equation for ‘addBalance’:
+          addBalance kv s
+            = s {block = s . block
+                               {balances = Env.bind s . block . balances kv}}
+   |
+62 |     s{block=s.block{balances=Env.bind s.block.balances kv}}
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+app/Main.hs:62:15: error:
+    • Couldn't match expected type ‘BlockInfo’
+                  with actual type ‘State -> BlockInfo’
+    • In the second argument of ‘(.)’, namely
+        ‘block {balances = Env.bind s . block . balances kv}’
+      In the ‘block’ field of a record
+      In the expression:
+        s {block = s . block {balances = Env.bind s . block . balances kv}}
+   |
+62 |     s{block=s.block{balances=Env.bind s.block.balances kv}}
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+app/Main.hs:62:30: error:
+    • Couldn't match type: a1 -> Env.Env a0 b0
+                     with: [(Uint256, Uint256)]
+      Expected: Env.Env Uint256 Uint256
+        Actual: a1 -> Env.Env a0 b0
+    • Probable cause: ‘(.)’ is applied to too few arguments
+      In the ‘balances’ field of a record
+      In the second argument of ‘(.)’, namely
+        ‘block {balances = Env.bind s . block . balances kv}’
+      In the ‘block’ field of a record
+   |
+62 |     s{block=s.block{balances=Env.bind s.block.balances kv}}
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+app/Main.hs:62:39: error:
+    • Couldn't match type ‘State’ with ‘[(a0, b0)]’
+      Expected: Env.Env a0 b0
+        Actual: State
+    • In the first argument of ‘Env.bind’, namely ‘s’
+      In the first argument of ‘(.)’, namely ‘Env.bind s’
+      In the ‘balances’ field of a record
+   |
+62 |     s{block=s.block{balances=Env.bind s.block.balances kv}}
+   |                                       ^
+
+app/Main.hs:62:41: error:
+    • Couldn't match type ‘BlockInfo’ with ‘(a0, b0)’
+      Expected: State -> (a0, b0)
+        Actual: State -> BlockInfo
+    • In the first argument of ‘(.)’, namely ‘block’
+      In the second argument of ‘(.)’, namely ‘block . balances kv’
+      In the ‘balances’ field of a record
+   |
+62 |     s{block=s.block{balances=Env.bind s.block.balances kv}}
+   |                                         ^^^^^
+
+app/Main.hs:62:47: error:
+    • Couldn't match type: [(Uint256, Uint256)]
+                     with: a1 -> State
+      Expected: a1 -> State
+        Actual: Env.Env Uint256 Uint256
+    • Possible cause: ‘balances’ is applied to too many arguments
+      In the second argument of ‘(.)’, namely ‘balances kv’
+      In the second argument of ‘(.)’, namely ‘block . balances kv’
+      In the ‘balances’ field of a record
+   |
+62 |     s{block=s.block{balances=Env.bind s.block.balances kv}}
+   |                                               ^^^^^^^^^^^
+
+app/Main.hs:62:56: error:
+    • Couldn't match expected type ‘BlockInfo’
+                  with actual type ‘(Uint256, Uint256)’
+    • In the first argument of ‘balances’, namely ‘kv’
+      In the second argument of ‘(.)’, namely ‘balances kv’
+      In the second argument of ‘(.)’, namely ‘block . balances kv’
+   |
+62 |     s{block=s.block{balances=Env.bind s.block.balances kv}}
+   |                                                        ^^

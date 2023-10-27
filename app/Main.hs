@@ -1,9 +1,12 @@
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
 import Prelude hiding (EQ, LT, GT, id)
 import Ast
+import SymbolicSem
 
 import Crypto.Hash.Keccak (keccak256)
 import qualified Data.ByteArray as BA
@@ -11,283 +14,95 @@ import qualified Env
 import qualified Memory
 import BytecodeDecode (decode)
 
+import qualified Control.Monad.State.Lazy as SM
+import Uint256
+import qualified Data.String as S
+import qualified Data.List as L
+
+import Data.Function ((&))
+import Debug.Trace
+
+type StateBuilder a = SM.State State a
+
+
+data Type =
+    TUint256
+    deriving Show
+
+typeId :: Type -> String
+typeId TUint256 = "uint256"
+
+data Call =
+    Call Uint256 String [(Type, Uint256)] Uint256
+    deriving Show
+
+callId :: Call -> BA.Bytes
+callId (Call _ fn args _) =
+    (encode . keccak256 . S.fromString $ fn ++ "(" ++ (L.intercalate "," . L.map (typeId . fst) $ args) ++ ")")
+    `BA.append` BA.concat (L.map (Memory.fromWord . snd) args :: [BA.Bytes])
+    where encode = BA.pack . BA.unpack . BA.take 4
+
+baseState :: Program -> State
+baseState ast = State
+    { program = ast
+    , pc = 0
+    , block = BlockInfo
+        { balances = EmptyStore }
+    , stack = []
+    , memory = EmptyStore
+    , storage = EmptyStore
+    , constraints = [] }
+
+addBalance :: (Integer, Integer) -> State -> State
+addBalance (k,v) s =
+    s{block=s.block{balances=Store s.block.balances (Literal k) (Literal v)}}
+
 main :: IO ()
-main = 
-    let s = State
-            { callState = CallState 
-                { id = 0
-                , caller = 1
-                , callValue = 0
-                , callData = BA.pack . BA.unpack $ ((BA.take 4 $ keccak256 "get(uint256)") `BA.append` Memory.fromWord 323 )}
-            , program = Program $ decode exampleByteCode
-            , pc = 0
-            , origin = 1
-            , block = BlockInfo
-                { number = 0
-                , timestamp = 0
-                , balances = Env.empty `Env.bind` (0,0) `Env.bind` (0,1) }
-            , stack = []
-            , memory = BA.empty
-            , storage = Env.empty }
-    in print $ sem s
+main =
+    baseState (Program $ decode simpleTransferBC) 
+    & addBalance (0, 500)
+    & sem
+    & print
 
-exampleByteCode :: String
-exampleByteCode = "608060405234801561000f575f80fd5b5060043610610034575f3560e01c806360fe47b1146100385780636d4ce63c14610054575b5f80fd5b610052600480360381019061004d91906101cc565b610072565b005b61005c61018c565b6040516100699190610206565b60405180910390f35b5f8054906101000a900473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff166323b872dd3330846040518463ffffffff1660e01b81526004016100ce9392919061025e565b6020604051808303815f875af11580156100ea573d5f803e3d5ffd5b505050506040513d601f19601f8201168201806040525081019061010e91906102c8565b505f3373ffffffffffffffffffffffffffffffffffffffff16600360405161013590610320565b5f6040518083038185875af1925050503d805f811461016f576040519150601f19603f3d011682016040523d82523d5f602084013e610174565b606091505b5050905080610181575f80fd5b816001819055505050565b5f600154905090565b5f80fd5b5f819050919050565b6101ab81610199565b81146101b5575f80fd5b50565b5f813590506101c6816101a2565b92915050565b5f602082840312156101e1576101e0610195565b5b5f6101ee848285016101b8565b91505092915050565b61020081610199565b82525050565b5f6020820190506102195f8301846101f7565b92915050565b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f6102488261021f565b9050919050565b6102588161023e565b82525050565b5f6060820190506102715f83018661024f565b61027e602083018561024f565b61028b60408301846101f7565b949350505050565b5f8115159050919050565b6102a781610293565b81146102b1575f80fd5b50565b5f815190506102c28161029e565b92915050565b5f602082840312156102dd576102dc610195565b5b5f6102ea848285016102b4565b91505092915050565b5f81905092915050565b50565b5f61030b5f836102f3565b9150610316826102fd565b5f82019050919050565b5f61032a82610300565b915081905091905056fea264697066735822122086d3c84c269a1ad0a7ca5cec1b01ee530c5b5a85ba6eb0623eb0b35a4323bea964736f6c63430008150033"
+{-
+baseState :: Program -> Call -> State
+baseState ast c@(Call snd fn par val) = State
+    { callState = CallState
+        { id = 0
+        , caller = snd
+        , callValue = val
+        , callData = callId c }
+    , program = ast
+    , pc = 0
+    , origin = snd
+    , block = BlockInfo
+        { number = 0
+        , timestamp = 0
+        , balances = Env.empty }
+    , stack = []
+    , memory = BA.empty
+    , storage = Env.empty}
 
-ast :: Program
-ast = Program
-    [ PUSH 1     0x80
-    , PUSH 1     0x40
-    , MSTORE    
-    , CALLVALUE 
-    , DUP 1      
-    , ISZERO    
-    , PUSH 2     0xf
-    , JUMPI     
-    , PUSH 0     0x0     
-    , DUP 1      
-    , REVERT    
-    , JUMPDEST  
-    , POP       
-    , PUSH 1     0x4
-    , CALLDATASIZE
-    , LT        
-    , PUSH 2     0x29
-    , JUMPI     
-    , PUSH 0     0x0     
-    , CALLDATALOAD
-    , PUSH 1     0xe0
-    , SHR       
-    , DUP 1      
-    , PUSH 4     0x9507d39a
-    , EQ        
-    , PUSH 2     0x2d
-    , JUMPI     
-    , JUMPDEST  
-    , PUSH 0     0x0     
-    , DUP 1      
-    , REVERT    
-    , JUMPDEST  
-    , PUSH 2     0x47
-    , PUSH 1     0x4
-    , DUP 1      
-    , CALLDATASIZE
-    , SUB       
-    , DUP 2      
-    , ADD       
-    , SWAP 1     
-    , PUSH 2     0x42
-    , SWAP 2     
-    , SWAP 1     
-    , PUSH 2     0xa9
-    , JUMP      
-    , JUMPDEST  
-    , PUSH 2     0x5d
-    , JUMP      
-    , JUMPDEST  
-    , PUSH 1     0x40
-    , MLOAD     
-    , PUSH 2     0x54
-    , SWAP 2     
-    , SWAP 1     
-    , PUSH 2     0xe3
-    , JUMP      
-    , JUMPDEST  
-    , PUSH 1     0x40
-    , MLOAD     
-    , DUP 1      
-    , SWAP 2     
-    , SUB       
-    , SWAP 1     
-    , RETURN    
-    , JUMPDEST  
-    , PUSH 0     0x0     
-    , PUSH 1     0x5
-    , DUP 3      
-    , PUSH 2     0x6b
-    , SWAP 2     
-    , SWAP 1     
-    , PUSH 2     0x129
-    , JUMP      
-    , JUMPDEST  
-    , SWAP 1     
-    , POP       
-    , SWAP 2     
-    , SWAP 1     
-    , POP       
-    , JUMP      
-    , JUMPDEST  
-    , PUSH 0     0x0     
-    , DUP 1      
-    , REVERT    
-    , JUMPDEST  
-    , PUSH 0     0x0     
-    , DUP 2      
-    , SWAP 1     
-    , POP       
-    , SWAP 2     
-    , SWAP 1     
-    , POP       
-    , JUMP      
-    , JUMPDEST  
-    , PUSH 2     0x88
-    , DUP 2      
-    , PUSH 2     0x76
-    , JUMP      
-    , JUMPDEST  
-    , DUP 2      
-    , EQ        
-    , PUSH 2     0x92
-    , JUMPI     
-    , PUSH 0     0x0     
-    , DUP 1      
-    , REVERT    
-    , JUMPDEST  
-    , POP       
-    , JUMP      
-    , JUMPDEST  
-    , PUSH 0     0x0     
-    , DUP 2      
-    , CALLDATALOAD
-    , SWAP 1     
-    , POP       
-    , PUSH 2     0xa3
-    , DUP 2      
-    , PUSH 2     0x7f
-    , JUMP      
-    , JUMPDEST  
-    , SWAP 3     
-    , SWAP 2     
-    , POP       
-    , POP       
-    , JUMP      
-    , JUMPDEST  
-    , PUSH 0     0x0     
-    , PUSH 1     0x20
-    , DUP 3      
-    , DUP 5      
-    , SUB       
-    , SLT       
-    , ISZERO    
-    , PUSH 2     0xbe
-    , JUMPI     
-    , PUSH 2     0xbd
-    , PUSH 2     0x72
-    , JUMP      
-    , JUMPDEST  
-    , JUMPDEST  
-    , PUSH 0     0x0     
-    , PUSH 2     0xcb
-    , DUP 5      
-    , DUP 3      
-    , DUP 6      
-    , ADD       
-    , PUSH 2     0x95
-    , JUMP      
-    , JUMPDEST  
-    , SWAP 2     
-    , POP       
-    , POP       
-    , SWAP 3     
-    , SWAP 2     
-    , POP       
-    , POP       
-    , JUMP      
-    , JUMPDEST  
-    , PUSH 2     0xdd
-    , DUP 2      
-    , PUSH 2     0x76
-    , JUMP      
-    , JUMPDEST  
-    , DUP 3      
-    , MSTORE    
-    , POP       
-    , POP       
-    , JUMP      
-    , JUMPDEST  
-    , PUSH 0     0x0     
-    , PUSH 1     0x20
-    , DUP 3      
-    , ADD       
-    , SWAP 1     
-    , POP       
-    , PUSH 2     0xf6
-    , PUSH 0     0x0     
-    , DUP 4      
-    , ADD       
-    , DUP 5      
-    , PUSH 2     0xd4
-    , JUMP      
-    , JUMPDEST  
-    , SWAP 3     
-    , SWAP 2     
-    , POP       
-    , POP       
-    , JUMP      
-    , JUMPDEST  
-    , PUSH 32    0x4e487b7100000000000000000000000000000000000000000000000000000000
-    , PUSH 0     0x0     
-    , MSTORE    
-    , PUSH 1     0x11
-    , PUSH 1     0x4
-    , MSTORE    
-    , PUSH 1     0x24
-    , PUSH 0     0x0     
-    , REVERT    
-    , JUMPDEST  
-    , PUSH 0     0x0     
-    , PUSH 2     0x133
-    , DUP 3      
-    , PUSH 2     0x76
-    , JUMP      
-    , JUMPDEST  
-    , SWAP 2     
-    , POP       
-    , PUSH 2     0x13e
-    , DUP 4      
-    , PUSH 2     0x76
-    , JUMP      
-    , JUMPDEST  
-    , SWAP 3     
-    , POP       
-    , DUP 3      
-    , DUP 3      
-    , ADD       
-    , SWAP 1     
-    , POP       
-    , DUP 1      
-    , DUP 3      
-    , GT        
-    , ISZERO    
-    , PUSH 2     0x156
-    , JUMPI     
-    , PUSH 2     0x155
-    , PUSH 2     0xfc
-    , JUMP      
-    , JUMPDEST  
-    , JUMPDEST  
-    , SWAP 3     
-    , SWAP 2     
-    , POP       
-    , POP       
-    , JUMP      
-    , REVERT   
-    , LOG 2      
-    , PUSH 5     0x6970667358
-    , REVERT   
-    , SLT       
-    , SHA3      
-    , REVERT   
-    , LOG 3      
-    , SELFDESTRUCT
-    , REVERT   
-    , REVERT   
-    , SWAP 2     
-    , SWAP 14    
-    , PUSH 29    0x60637e12b12ec0871c14af0fe2321983647a472638a10dff64736f6c63
-    , NUMBER    
-    , STOP      
-    , ADDMOD    
-    , ISZERO    
-    , STOP      
-    , CALLER ]
+addBalance :: (Uint256, Uint256) -> State -> State
+addBalance kv s =
+    s{block=s.block{balances=s.block.balances `Env.bind` kv}}
+
+getOutput :: [Type] -> Result -> [Uint256]
+getOutput [] (Returned _) = [] 
+getOutput (TUint256:ts) (Returned m) = Memory.getWord m 0:getOutput ts (Returned $ BA.drop 32 m)
+
+main :: IO ()
+main =
+--    baseState (Program $ decode getBC) (Call 1 "get" [(TUint256, 323)] 0)
+    baseState (Program $ decode simpleTransferBC) (Call 1 "withdraw" [(TUint256, 323)] 0)
+    & addBalance (0, 500)
+    & sem
+    & getOutput [TUint256]
+    & print
+-}
+
+getBC :: String
+getBC = "608060405234801561001057600080fd5b506004361061002b5760003560e01c80639507d39a14610030575b600080fd5b61004a600480360381019061004591906100b1565b610060565b60405161005791906100ed565b60405180910390f35b600060058261006f9190610137565b9050919050565b600080fd5b6000819050919050565b61008e8161007b565b811461009957600080fd5b50565b6000813590506100ab81610085565b92915050565b6000602082840312156100c7576100c6610076565b5b60006100d58482850161009c565b91505092915050565b6100e78161007b565b82525050565b600060208201905061010260008301846100de565b92915050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052601160045260246000fd5b60006101428261007b565b915061014d8361007b565b925082820190508082111561016557610164610108565b5b9291505056fea26469706673582212202a6aad6879abb7c462fc897f8b94cb44b0c0c9638f7500954520239fc3d276e764736f6c63430008120033"
+
+simpleTransferBC :: String
+simpleTransferBC = "608060405234801561001057600080fd5b506004361061002b5760003560e01c80632e1a7d4d14610030575b600080fd5b61004a6004803603810190610045919061010e565b61004c565b005b4781111561005957600080fd5b60003373ffffffffffffffffffffffffffffffffffffffff168260405161007f9061016c565b60006040518083038185875af1925050503d80600081146100bc576040519150601f19603f3d011682016040523d82523d6000602084013e6100c1565b606091505b50509050806100cf57600080fd5b5050565b600080fd5b6000819050919050565b6100eb816100d8565b81146100f657600080fd5b50565b600081359050610108816100e2565b92915050565b600060208284031215610124576101236100d3565b5b6000610132848285016100f9565b91505092915050565b600081905092915050565b50565b600061015660008361013b565b915061016182610146565b600082019050919050565b600061017782610149565b915081905091905056fea26469706673582212205ab90b00c32b8b835b89e81b4f98a6cc581c6e3e00a988d7ed07797f65b17b2464736f6c63430008120033"

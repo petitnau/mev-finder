@@ -8,6 +8,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteArray as BA
 import Data.Maybe (fromJust)
 import Memory (toWord)
+import Numeric
 import Prelude hiding (EQ, LT, GT, id)
 
 padToWordSize :: String -> String
@@ -15,9 +16,8 @@ padToWordSize s
     | length s <  64  = padToWordSize $ '0' : '0' :  s
     | otherwise = s
 
-createWord :: String -> Uint256
-createWord = (toWord :: BA.Bytes -> Uint256) . BA.pack . BS.unpack . fromJust . 
-             TH.decodeHex . Text.pack . padToWordSize
+createWord :: String -> Integer
+createWord = fst . head . readHex
 
 decode :: String -> [Ast]
 decode ('0': '0': r) = STOP          : decode r
