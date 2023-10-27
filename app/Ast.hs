@@ -65,6 +65,7 @@ data Ast
     | COINBASE
     | TIMESTAMP
     | NUMBER
+    | PREVRANDAO
     | DIFFICULTY
     | GASLIMIT
     | CHAINID
@@ -94,6 +95,7 @@ data Ast
     | CREATE2
     | STATICCALL
     | REVERT
+    | INVALID
     | SELFDESTRUCT
     deriving Show
 
@@ -224,6 +226,7 @@ sem1 s = case traceShowId $ s.program `opAt` s.pc of
         COINBASE        -> error "COINBASE NOT IMPLEMENTED"
         TIMESTAMP       -> push (s.block.timestamp) s
         NUMBER          -> push (s.block.number) s
+        PREVRANDAO      -> error "PREVRANDAO NOT IMPLEMENTED"
         GASLIMIT        -> error "GASLIMIT NOT IMPLEMENTED"
         CHAINID         -> error "CHAINID NOT IMPLEMENTED"
         SELFBALANCE     -> push (get s.block.balances s.callState.id) s
@@ -246,5 +249,6 @@ sem1 s = case traceShowId $ s.program `opAt` s.pc of
             let (a,l1,b,l2) = (s.stack!!0, take (i-1) . drop 1 $ s.stack, s.stack!!i, drop (i+1) s.stack) in
                 Right s{stack=b:l1 ++ a:l2, pc=s.pc+1}
         REVERT          -> Left Reverted
+        INVALID         -> error "INVALID NOT IMPLEMENTED"
         RETURN          -> case s.stack of off:size:_ -> Left (Returned (takeExt (fromIntegral size) . BA.drop (fromIntegral off) $ s.memory)); _ -> error "fuck"
         x               -> error (show x ++ " NOT IMPLEMENTED")
