@@ -7,7 +7,6 @@ import qualified Data.Text as Text
 import qualified Data.ByteString as BS
 import qualified Data.ByteArray as BA
 import Data.Maybe (fromJust)
-import Memory (toWord)
 import Numeric
 import Prelude hiding (EQ, LT, GT, id)
 
@@ -19,7 +18,10 @@ padToWordSize s
 createWord :: String -> Integer
 createWord = fst . head . readHex
 
-decode :: String -> [Ast]
+decodeProgram :: String -> Program
+decodeProgram = Program . decode
+
+decode :: String -> [OpCode]
 decode ('0': '0': r) = STOP          : decode r
 decode ('0': '1': r) = ADD           : decode r
 decode ('0': '2': r) = MUL           : decode r
@@ -89,7 +91,7 @@ decode ('5': '9': r) = MSIZE         : decode r
 decode ('5': 'a': r) = GAS           : decode r
 decode ('5': 'b': r) = JUMPDEST      : decode r
 -- 5c-5e invalid instructions
-decode ('5': 'f': r) = PUSH 0  (createWord "")           : decode r
+decode ('5': 'f': r) = PUSH 0  (createWord "0")           : decode r
 decode ('6': '0': r) = PUSH 1  (createWord $ take 2 r)   : decode (drop 2 r)
 decode ('6': '1': r) = PUSH 2  (createWord $ take 4 r)   : decode (drop 4 r)
 decode ('6': '2': r) = PUSH 3  (createWord $ take 6 r)   : decode (drop 6 r)

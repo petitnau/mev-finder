@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module Ast where
 
 import Uint256
@@ -19,7 +17,7 @@ import Numeric
 import Debug.Trace
 import qualified Data.List as L
 
-data Ast
+data OpCode
     = STOP
     | ADD
     | MUL
@@ -102,10 +100,10 @@ data Ast
     | MISSING 
     deriving Show
 
-newtype Program = Program [Ast]
+newtype Program = Program [OpCode] 
 instance Show Program where show = const "Program"
 
-opAt :: Program -> Int -> Ast
+opAt :: Program -> Int -> OpCode
 opAt (Program []) n = error "Not found"
 opAt (Program (x:_)) 0 = x 
 opAt (Program ((PUSH s _):xs)) n = opAt (Program xs) (n-s-1) 

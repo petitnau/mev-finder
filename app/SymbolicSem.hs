@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module SymbolicSem where
 
-import Uint256
 import Data.Composition
 import qualified Data.ByteArray as BA
 import Text.Hex ( encodeHex )
@@ -13,162 +13,104 @@ import Prelude hiding (EQ, GT, LT)
 import Memory
 import Env
 import Data.Maybe (fromJust)
-import Utils (printMem)
+import Utils (printMem, (>>>=))
 import Numeric
 import Ast
 
 import Debug.Trace
 import qualified Data.List as L
 import Data.Either
+import Z3
+import Protolude.Functor
+import GenericSem
+import Data.Tuple.HT (mapSnd)
 
-data UnOp
-    = SignExtend | Sha3
-    | Balance | CallDataAt
-    | IsZero
-    | Not
-    deriving (Eq, Ord, Show)
-data BinOp
-    = Add | Mul | Sub | Div | SDiv | Mod | SMod | Exp | Byte | Shl | Shr | Sar
-    | Lt | Gt | SLt | SGt | Eq
-    | And | Or | Xor
-    deriving (Eq, Ord, Show)
-data TerOp
-    = AddMod | MulMod
-    deriving (Eq, Ord, Show)
-data Const
-    = Address | Origin | Caller | CallValue | CallDataSize | CodeSize | GasPrice | ExtCodeSize | ReturnDataSize | ExtCodeHash | BlockHash | Coinbase | Timestamp | Number | Difficulty | GasLimit | ChainId | SelfBalance | BaseFee | MSize | Gas
-    deriving (Eq, Ord, Show)
-
-data Expr
-    = Const Const
-    | UnOp  UnOp  Expr
-    | BinOp BinOp Expr Expr
-    | TerOp TerOp Expr Expr Expr
-    | SVar String
-    | Literal Integer
-    | Select Expr Expr
-    | Store Expr Expr Expr
-    | EmptyStore
-    deriving (Eq, Ord, Show)
-
-data BlockInfo = BlockInfo
-    { balances :: Expr }
+data Extra = Extra { constraints :: [Expr], callDataSize :: Expr }
     deriving Show
 
--- [Uint256]>
-type Stack = [Expr]
+type State  = GState  Extra Expr Expr Expr Expr
+type Result = GResult Extra Expr Expr Expr Expr
 
--- [Uint8]
-type Memory = Expr
 
--- Uint256 -> Uint256
-type Storage = Expr
-
-data State = State
-    { program :: Program
-    , pc :: Int
-    , block :: BlockInfo
-    , stack :: Stack
-    , memory :: Memory
-    , storage :: Storage
-    , constraints :: [Expr] }
-    deriving Show
-
-data Result
-    = Returned (Expr, Expr)
-    | Reverted
-    deriving Show
-
-pop :: State -> Either Result State
-pop s@State{stack = a:r} = Right s{stack=r, pc=s.pc+1}
-pop _ = Left Reverted
-
-push :: (Expr) -> State -> Either Result State
-push v s@State{stack = r} = Right s{stack=v:r, pc=s.pc+1}
-
-semuop :: (Expr -> Expr) -> State -> Either Result State
-semuop op s@State{stack = a:r} = Right s{stack=op a:r, pc=s.pc+1}
-semuop _ _ = Left Reverted
-
-sembop :: (Expr -> Expr -> Expr) -> State -> Either Result State
-sembop op s@State{stack = a:b:r} = Right s{stack=op a b:r, pc=s.pc+1}
-sembop _ _ = Left Reverted
-
-semtop :: (Expr -> Expr -> Expr -> Expr) -> State -> Either Result State
-semtop op s@State{stack = a:b:c:r} = Right s{stack=op a b c:r, pc=s.pc+1}
-semtop _ _ = Left Reverted
+(##) :: State -> Expr -> State
+(##) s e = s{extra=s.extra{constraints=e:s.extra.constraints}}
 
 sem :: State -> [Result]
 sem s =
-    let (results, states) = partitionEithers (traceShowId $ sem1 s) in
-    results ++ concatMap sem states
+    let b0 = s.balances in
+    let b1 = b0 @+ (s.caller, (b0 @! s.caller) `bvsub` s.callValue) in
+    let b2 = b1 @+ (s.id,     (b1 @! s.id)     `bvadd` s.callValue) in
+    uncurry (++) . mapSnd concat . partitionEithers . fmap (fmap sem_) $ 
+        [ Right $ s{balances=b2} ## lnot ((b0 @! s.caller) `bvult` s.callValue)
+        , Left Reverted ]
+
+sem_ :: State -> [Result]
+sem_ s =
+    let (results, states) = partitionEithers (sem1 s) in
+    results ++ concatMap sem_ states
 
 semcall :: State -> [Either Result State]
 semcall s@State{stack = g:a:v:ao:as:ro:rs:r} =
-    [ Right s{stack=Literal 0:r, pc=s.pc+1, constraints=BinOp Lt (Select s.block.balances (Const Address)) v:s.constraints}
-    , let b0 = s.block.balances in
-      let b1 = Store b0 (Const Address) (BinOp Sub (Select b0 (Const Address)) v) in
-      let b2 = Store b1 a               (BinOp Add (Select b1 a              ) v) in
-      Right s { stack=Literal 1:r
-              , pc=s.pc+1
-              , block=s.block{balances=b2}
-              , constraints=UnOp Not (BinOp Lt (Select b0 (Const Address)) v):s.constraints} ]
+    let b0 = s.balances in
+    let b1 = b0 @+ (s.id, (b0 @! s.id) `bvsub` v) in
+    let b2 = b1 @+ (a,    (b1 @! a)    `bvadd` v) in
+    Right <$>
+        [ s{stack=word 1:r, balances=b2} ## lnot ((b0 @! s.id) `bvult` v)
+        , s{stack=word 0:r}              ##      ((b0 @! s.id) `bvult` v) ]
 
 sem1 :: State -> [Either Result State]
-sem1 s = case traceShowId $ s.program `opAt` s.pc of
-        STOP            -> [Left (Returned (Literal 0, s.block.balances))]
-        ADD             -> [sembop (BinOp Add) s]
-        MUL             -> [sembop (BinOp Mul) s]
-        SUB             -> [sembop (BinOp Sub) s]
-        DIV             -> [sembop (BinOp Div) s]
-        SDIV            -> [sembop (BinOp SDiv) s]
-        MOD             -> [sembop (BinOp Mod) s]
-        SMOD            -> [sembop (BinOp SMod) s]
+sem1 s = increasePC <<$>> case s.program `opAt` s.pc of
+        STOP            -> [Left (Returned (LBitVec 1 0, s))]
+        ADD             -> [sembop bvadd s]
+        MUL             -> [sembop bvmul s]
+        SUB             -> [sembop bvsub s]
+        DIV             -> [sembop bvudiv s]
+        SDIV            -> [sembop bvsdiv s]
+        MOD             -> [sembop bvurem s]
+        SMOD            -> [sembop bvsrem s]
         ADDMOD          -> [semtop (TerOp AddMod) s]
         MULMOD          -> [semtop (TerOp MulMod) s]
         EXP             -> [sembop (BinOp Exp) s]
-        LT              -> [sembop (BinOp Lt) s]
-        GT              -> [sembop (BinOp Gt) s]
-        SLT             -> [sembop (BinOp SLt) s]
-        SGT             -> [sembop (BinOp SGt) s]
-        EQ              -> [sembop (BinOp Eq) s]
-        ISZERO          -> [semuop (UnOp  IsZero) s]
-        AND             -> [sembop (BinOp And) s]
-        OR              -> [sembop (BinOp Or) s]
-        XOR             -> [sembop (BinOp Xor) s]
-        NOT             -> [semuop (UnOp  Not) s]
+        LT              -> [sembop (bool2bitvec .* bvult) s]
+        GT              -> [sembop (bool2bitvec .* bvugt) s]
+        SLT             -> [sembop (bool2bitvec .* bvslt) s]
+        SGT             -> [sembop (bool2bitvec .* bvsgt) s]
+        EQ              -> [sembop (bool2bitvec .* eq) s]
+        ISZERO          -> [semuop (bool2bitvec . eq (word 0)) s]
+        AND             -> [sembop bvand s]
+        OR              -> [sembop bvor s]
+        XOR             -> [sembop bvxor s]
+        NOT             -> [semuop bvnot s]
         BYTE            -> [sembop (BinOp Byte) s]
-        SHL             -> [sembop (BinOp Shl) s]
-        SHR             -> [sembop (BinOp Shr) s]
-        ADDRESS         -> [push (Const Address) s]
-        BALANCE         -> [semuop (UnOp Balance) s]
-        SELFBALANCE     -> [push (UnOp Balance (Const Address)) s]
-        ORIGIN          -> [push (Const Origin) s]
-        CALLER          -> [push (Const Caller) s]
-        CALLVALUE       -> [push (Const CallValue) s]
-        CALLDATASIZE    -> [push (Const CallDataSize) s]
-        CALLDATALOAD    -> [semuop (UnOp CallDataAt) s]
-
-        POP             -> [pop s]
-        JUMP            -> case s.stack of (Literal loc):r -> [Right s{stack=r, pc=fromIntegral loc}]; _  -> error "fuck"
-        JUMPI           -> case s.stack of
-                                (Literal loc):b:r ->
-                                    [ Right s{stack=r, pc=fromIntegral loc, constraints=b:s.constraints }
-                                    , Right s{stack=r, pc=s.pc+1, constraints=UnOp Not b:s.constraints }]
-                                ; _  -> error "fuck"
-        JUMPDEST        -> [Right s{pc=s.pc+1}]
-        DUP i           -> [push (s.stack !! (i-1)) s]
-        SWAP i          ->
-            let (a,l1,b,l2) = (s.stack!!0, take (i-1) . drop 1 $ s.stack, s.stack!!i, drop (i+1) s.stack) in
-                [Right s{stack=b:l1 ++ a:l2, pc=s.pc+1}]
-
-        MLOAD           -> [semuop (Select s.memory) s]
-        MSTORE          -> case s.stack of off:val:r -> [Right s{stack=r, memory=Store s.memory off val, pc=s.pc+1}]; _  -> error "fuck"
-        PUSH size v     -> [push (Literal v) s{pc=s.pc + size}]
-        RETURN          -> case s.stack of off:size:_ -> [Left (Returned (s.memory, s.block.balances))]; _ -> error "fuck"
-        GAS             -> [push (Literal 1) s]
-        RETURNDATASIZE  -> [push (Literal 0) s]
-        RETURNDATACOPY  -> case s.stack of doff:off:(Literal 0):r -> [Right s{stack=r, pc=s.pc+1}]; _  -> error "fuck"
+        SHL             -> [sembop (flip bvshl) s]
+        SHR             -> [sembop (flip bvlshr) s]
+        SAR             -> [sembop (flip bvashr) s]
+        SHA3            -> [sembop (\off size -> UnOp Hash (extract off size s.memory )) s]
+        ADDRESS         -> [push s.id s]
+        BALANCE         -> [semuop (s.balances @!) s]
+        SELFBALANCE     -> [push (s.balances @! s.id) s]
+        ORIGIN          -> [push s.caller s]
+        CALLER          -> [push s.caller s]
+        CALLVALUE       -> [push s.callValue s]
+        CALLDATASIZE    -> [push s.extra.callDataSize s]
+        CALLDATALOAD    -> [semuop (\x -> extract (x `bvmul` word 8) (word 256) s.callData) s]
+        POP             -> [pop_ s]
+        JUMP            -> [pop s >>= \(s, LBitVec _ loc) -> Right s{pc=fromIntegral loc-1}]
+        JUMPI           -> [pop2 s] >>>= \(s, LBitVec _ loc, b) -> Right <$>
+                                [ s                        ##      (b `eq` word 0)
+                                , s{pc=fromIntegral loc-1} ## lnot (b `eq` word 0) ]
+        JUMPDEST        -> [Right s]
+        DUP i           -> [lookn (i-1) s >>= \(s, h) -> push h s]
+        SWAP i          -> [pop s >>= \(s, h) -> popn (i-1) s >>= \(s, m) -> pop s >>= \(s, t) -> pushn (t:m++[h]) s]
+        SLOAD           -> [semuop (s.storage @!) s]
+        SSTORE          -> [pop2 s >>= \(s, k, v) -> Right s{storage=s.storage @+ (k,v)}]
+        MLOAD           -> [semuop (\x -> extract (x `bvmul` word 8) (word 256) s.memory) s]
+        MSTORE          -> [pop2 s >>= \(s, off, val) -> Right s{memory=replace off val (word 256) s.memory}]
+        PUSH size v     -> [push (word v) s{pc=s.pc + size}]
+        RETURN          -> [pop2 s >>= \(s, off, size) -> Left (Returned (s.memory, s))]
+        GAS             -> [push (word 1) s]
+        RETURNDATASIZE  -> [push (word 0) s]
+        RETURNDATACOPY  -> [pop3 s >>= \(s, doff, off, LBitVec _ 0) -> Right s]
         MISSING         -> [Left Reverted]
         INVALID         -> [Left Reverted]
         REVERT          -> [Left Reverted]

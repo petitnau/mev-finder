@@ -1,10 +1,16 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeApplications #-}
+
 module Memory where
 
 import qualified Data.ByteArray as BA
 import Data.DoubleWord
 import Data.Word
 import Uint256
+import Data.Parameterized (sndPair, viewSome)
+import Data.Maybe (fromJust)
+import Data.BitVector.Sized as BV
 
 takeExt :: BA.ByteArray a => Int -> a -> a
 takeExt n = padr n . BA.take n
@@ -13,33 +19,29 @@ padr :: BA.ByteArray a => Int -> a -> a
 padr n ba = ba `BA.append` BA.zero (n - BA.length ba)
 
 applyPairs :: (a -> a -> b) -> [a] ->  [b]
-applyPairs f = map (uncurry f) . uncurry zip . foldr (\a ~(x,y) -> (a:y,x)) ([],[]) 
+applyPairs f = map (uncurry f) . uncurry zip . foldr (\a ~(x,y) -> (a:y,x)) ([],[])
 
-getWord :: BA.ByteArray a => a -> Int -> Uint256
-getWord ba offset = 
-    toWord . takeExt 32 . BA.drop offset $ ba
+getUint256 :: BA.ByteArray a => a -> Int -> Uint256
+getUint256 ba offset =
+    toUint256 . takeExt 32 . BA.drop offset $ ba
 
-toWord :: BA.ByteArray a => a -> Uint256
-toWord ba = 
-    let y = BA.unpack ba in
-    let (z0 :: [Word16]) = applyPairs fromHiAndLo y in 
-    let (z1 :: [Word32]) = applyPairs fromHiAndLo z0 in 
-    let (z2 :: [Word64]) = applyPairs fromHiAndLo z1 in 
-    let (z3 :: [Word128]) = applyPairs fromHiAndLo z2 in 
-    let (z4 :: [Word256]) = applyPairs fromHiAndLo z3 in 
-    Uint256 $ head z4
+toUint256 :: BA.ByteArray a => a -> Uint256
+toUint256 ba =
+    let z0 =  word8 <$>  BA.unpack ba in
+    let z1 = applyPairs (BV.concat knownNat knownNat) z0 in
+    let z2 = applyPairs (BV.concat knownNat knownNat) z1 in
+    let z3 = applyPairs (BV.concat knownNat knownNat) z2 in
+    let z4 = applyPairs (BV.concat knownNat knownNat) z3 in
+    let z5 = applyPairs (BV.concat knownNat knownNat) z4 in
+    Uint256 $ head z5
 
-fromWord :: BA.ByteArray a => Uint256 -> a
-fromWord (Uint256 w) = 
-    let y = [w] in 
-    let z0 = concatMap (\w -> [hiWord w, loWord w]) y in
-    let z1 = concatMap (\w -> [hiWord w, loWord w]) z0 in
-    let z2 = concatMap (\w -> [hiWord w, loWord w]) z1 in
-    let z3 = concatMap (\w -> [hiWord w, loWord w]) z2 in
-    let z4 = concatMap (\w -> [hiWord w, loWord w]) z3 in
-    BA.pack z4
+fromUint256 :: BA.ByteArray a => Uint256 -> a
+fromUint256 = BA.pack . fromJust . BV.asBytesBE knownNat . toBV
 
 updateBytes :: BA.ByteArray a => a -> a -> Int -> a
 updateBytes ba1 ba2 off =
     let (ba1l, ba1r) = (takeExt off ba1, BA.drop (off + BA.length ba2) ba1)  in
     ba1l `BA.append` ba2 `BA.append` ba1r
+
+byteAt :: Uint256 -> Uint256 -> Uint256
+byteAt = apply2 (\bvx bvi -> BV.concat knownNat knownNat (BV.zero (knownNat @248)) . BV.word8 . (!! fromIntegral (asUnsigned bvi)) . fromJust . BV.asBytesLE knownNat $ bvx)
