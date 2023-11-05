@@ -223,18 +223,20 @@ normalize ds (TerOp op e1 e2 e3) = do
 normalize ds (ForAll v t e) =
     ForAll v t <$> normalize ds e
 
-smtcheck :: [Decl] -> [Expr] -> IO Bool
-smtcheck ds conds = do
-    print "START"
+smtcheck :: [Decl] -> [Expr] -> [Expr] -> IO Bool
+smtcheck ds conds maxims = do
     normconds <- mapM (normalize ds) conds
-    print "NORMALIZED"
+    normmaxims <- mapM (normalize ds) maxims
     let smt = unlines (
             map show ds ++
             map (\cond -> "(assert " ++ show cond ++ ")") normconds ++
-            ["(check-sat) (get-model)"])
+            map (\expr -> "(maximize " ++ show expr ++ ")") normmaxims ++
+            ["(check-sat)"] ++
+            -- ["(get-model)"] ++
+            map (\expr -> "(eval " ++ show expr ++ ")") normmaxims
+            )
     writeFile "check.smt" smt
     x <- readProcessWithExitCode "z3" ["check.smt"] ""
     let (code, stdout, stderr) = x
-    putStrLn stdout
     return $ not ("unsat" `isInfixOf` stdout)
     -- putStrLn stdout
