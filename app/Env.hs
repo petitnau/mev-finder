@@ -12,6 +12,9 @@ instance (Show a, Show b, Ord a) => Show (Env a b) where
 empty :: Env a b 
 empty = Env []
 
+domain :: Eq a => Env a b -> [a]
+domain (Env ls) = nub . map fst $ ls
+
 bind :: Env a b -> (a, b) -> Env a b
 bind (Env d) e = Env (e:d)
 

@@ -13,16 +13,21 @@ import Prelude hiding (EQ, LT, GT, id)
 import Ast
 import GenericSem
 
-import SymbolicSem
--- import ConcreteSem
--- import Uint256
-import Z3
+import Symbolic.Sem as SS
+import Symbolic.Interface as SI
+import Symbolic.SMT
+import Symbolic.MEV
+
+import Concrete.Sem as CS
+import Concrete.Interface as CI
+import Concrete.IERC20
+import Concrete.Uint256
 
 import Crypto.Hash.Keccak (keccak256)
 import qualified Data.ByteArray as BA
 import qualified Env
-import qualified Memory
-import BytecodeDecode (decode, decodeProgram)
+import qualified Concrete.Memory as Memory
+import Solidity.BytecodeDecode (decode, decodeProgram)
 
 import qualified Control.Monad.State.Lazy as SM
 import qualified Data.String as S
@@ -40,170 +45,41 @@ import Control.Monad (forM, forM_, filterM)
 import Protolude (ifM)
 import Data.Functor ((<&>))
 
-type StateBuilder a = SM.State State a
+liftR :: (SS.State -> a) -> ((Expr, SS.State, Integer) -> [a])
+liftR f = \(_,s,_) -> [f s]
 
-data Type =
-    TUint256
-    deriving Show
-
-typeId :: Type -> String
-typeId TUint256 = "uint256"
-
-baseState :: Program -> State
-baseState prog = State
-    { id = Var "Id"
-    , caller = Var "Caller1"
-    , callValue = Var "CallValue1"
-    , callData = Var "CallData1"
-    , number = Var "BlockNumber"
-    , timestamp = Var "Timestamp"
-    , program = prog
-    , pc = 0
-    , balances = Var "Balances"
-    , stack = []
-    , memory = mem 0
-    , storage = Var "Storage"
-    , extra = Extra {constraints = [], callDataSize = Var "CallDataSize1"} }
-
-baseDecls :: [Decl]
-baseDecls =
-    [ DeclVar "Id" tword
-    , DeclVar "BlockNumber" tword
-    , DeclVar "Timestamp" tword
-    , DeclVar "Balances" (TArray tword tword)
-    , DeclVar "Storage" (TArray tword tword)
-    , DeclFun "Hash" tmem tword ]
-
-baseAxioms :: [Expr]
-baseAxioms =
-    [ Var "Id" `eq` word 0 ]
-
-declsCall :: Integer -> [Decl]
-declsCall i =
-    [ DeclVar ("Caller" ++ show i) tword
-    , DeclVar ("CallValue" ++ show i) tword
-    , DeclVar ("CallDataSize" ++ show i) tword
-    , DeclVar ("CallData" ++ show i) tmem ]
-
-axiomsCall :: Integer -> [Expr]
-axiomsCall i =
-    [ Var ("CallData" ++ show i) `eq` (Var ("CallData" ++ show i) `bvand` ((mem 0 `bvsub` mem 1) `bvshl` (mem 1024 `bvsub` ((LBitVec 768 0 +++ Var ("CallDataSize" ++ show i)) `bvmul` mem 8))))
-    , ForAll "x" tword ((Var "Balances" @! Var "x") `bvult` word 0x100000000000000000000000000000000) ]
-
-check_ :: Integer -> State -> [Decl] -> [Expr] -> ((Expr, State, Integer) -> [Expr]) -> ((Expr, State, Integer) -> [Expr]) -> (Integer -> [Expr]) -> Integer -> IO Bool
-check_ 0 state decls axioms checks maxims customAxioms i = return False
-check_ depth state decls axioms checks maxims customAxioms i = do
-    putStrLn $ "Checking depth: " ++ show i
-    let decls'  = decls  ++ declsCall i
-    let axioms' = axioms ++ axiomsCall i
-    let results = mapMaybe (\case Returned r -> Just r; _ -> Nothing) (sem state)
-    let constraintss2 = map (\(r,s) -> (r, s, (checks (r,s,i) ++ customAxioms i ++ axioms' ++ s.extra.constraints, maxims (r, s, i)))) results
-    anyM (uncurry (smtcheck decls') . thd3) constraintss2 `orM`
-        do
-            let constraintss = map (\(r,s) -> (r, s, (customAxioms i ++ axioms' ++ s.extra.constraints, []))) results
-            feasible <- filterM (uncurry (smtcheck decls') . thd3) constraintss
-            results <- forM feasible (\(r, s, _) ->
-                let state' = s{
-                    caller = Var ("Caller" ++ show (i+1)),
-                    callValue = Var ("CallValue" ++ show (i+1)),
-                    callData = Var ("CallData" ++ show (i+1)),
-                    pc = 0,
-                    memory = mem 0,
-                    extra=s.extra{callDataSize = Var ("CallDataSize" ++ show (i+1))} } in
-                check_ (depth-1) state' decls' axioms' checks maxims customAxioms (i+1))
-            return $ or results
-
-check :: Integer -> ((Expr, State, Integer) -> [Expr]) -> ((Expr, State, Integer) -> [Expr]) -> (Integer -> [Expr]) -> Program -> IO Bool
-check depth checks maxims customAxioms program =
-    check_ depth (baseState program) baseDecls baseAxioms checks maxims customAxioms 1
-
-storeAxioms :: Expr -> [(Expr, Expr)] -> [Expr]
-storeAxioms e = map (\(k,v) -> (e @! k) `eq` v)
-
-oneOf :: Expr -> [Expr] -> Expr
-oneOf e = foldr1 bvor . map (e `eq`)
-
-buildAxioms :: [Expr] -> [(Expr, Expr)] -> [(Expr, Expr)] -> Integer -> [Expr]
-buildAxioms attackers balances storage n =
-    [ Var ("Caller" ++ show i) `oneOf` attackers | i <- [1..n]] ++
-    storeAxioms (Var "Balances") balances ++
-    storeAxioms (Var "Storage") storage
-
-hasMEV :: [Expr] -> (Expr, State, Integer) -> [Expr]
-hasMEV attackers (_,s,_) =
-    let atkworth b = foldr1 bvadd . map (b @!) $ attackers in
-    [ atkworth s.balances `bvugt` atkworth (Var "Balances") ]
-
-valMEV :: [Expr] -> (Expr, State, Integer) -> [Expr]
-valMEV attackers (_,s,_) =
-    let atkworth b = foldr1 bvadd . map (b @!) $ attackers in
-    [ atkworth s.balances `bvsub` atkworth (Var "Balances") ]
-
-
-main :: IO ()
-main = do
+smain :: IO ()
+smain = do
     let attackers = [word 1]
     let axioms = buildAxioms attackers
-            [ (word 0,   word 500)
-            , (word 1,   word 1) ]
+            [ (word 0, word 500)
+            , (word 1, word 1) ]
             [ ]
             -- (UnOp Hash(LBitVec 512 0 +++ LBitVec 256 1 +++ LBitVec 256 0), word 10) 
     let contract = "Password"
     program <- decodeProgram <$> readFile ("examples/bin/" ++ contract ++ ".bin-runtime")
-    check 1 (hasMEV attackers) (valMEV attackers) axioms program >>= print
-{-
--}
-{-
-data Call =
-    Call Uint256 String [(Type, Uint256)] Uint256
-    deriving Show
+    check 1 (liftR $ hasMEV attackers) (liftR $ extractedValue attackers) axioms program >>= print
 
-callId :: Call -> BA.Bytes
-callId (Call _ fn args _) =
-    (encode . keccak256 . S.fromString $ fn ++ "(" ++ (L.intercalate "," . L.map (typeId . fst) $ args) ++ ")")
-    `BA.append` BA.concat (L.map (Memory.fromUint256 . snd) args :: [BA.Bytes])
-    where encode = BA.pack . BA.unpack . BA.take 4
-
-baseState :: Program -> Call -> State
-baseState prog c@(Call snd fn par val) = State
-    { id = 0
-    , caller = snd
-    , callValue = val
-    , number = 0
-    , timestamp = 0
-    , callData = callId c
-    , program = prog
-    , pc = 0
-    , balances = Env.empty
-    , stack = []
-    , memory = BA.empty
-    , storage = Env.empty
-    , extra = () }
-
-addBalance :: (Uint256, Uint256) -> State -> State
-addBalance kv s =
-    s{balances=s.balances `Env.bind` kv}
-
-addStorage :: (Uint256, Uint256) -> State -> State
-addStorage kv s =
-    s{storage=s.storage `Env.bind` kv}
-
-getOutput :: [Type] -> Result -> [Uint256]
-getOutput [] (Returned _) = []
-getOutput (TUint256:ts) (Returned (m, s)) = Memory.getUint256 m 0:getOutput ts (Returned (BA.drop 32 m, s))
-
-main :: IO ()
-main = do
+cmain :: IO ()
+cmain = do
+    let eur = 0x230A1AC45690B9Ae1176389434610B9526d2f21b 
+    let dkk = 0x330a1Ac45690b9ae1176389434610b9526D2f21B
     let contract = "AMM"
     program <- decodeProgram <$> readFile ("examples/bin/" ++ contract ++ ".bin-runtime")
-    let result = baseState program
-            -- (Call 1 "get" [] 0)
-            (Call 1 "addliq" [(TUint256, 350), (TUint256, 350)] 10)
-            & addBalance (0, 500)
-            & addBalance (1, 10)
-            & sem
+    let result = CI.baseState program
+            -- (Call 1 "withdraw" [(TUint256, 3)] 0)
+            (Call 1 "addliq" [(TUint256, 350), (TUint256, 350)] 0)
+            & setBalance (0, 500)
+            & setBalance (1, 10)
+            & setERC20Balance (eur, 1, 500)
+            & setERC20Allowance (eur, 0, 1, 500)
+            & setERC20Balance (dkk, 1, 500)
+            & setERC20Allowance (dkk, 0, 1, 500)
+            & CS.sem
     putStrLn "\n"
     putStrLn $ prettyResult result
     putStrLn "--   VALUE  --"
     print $ getOutput [] result
--}
+
+main :: IO ()
+main = smain

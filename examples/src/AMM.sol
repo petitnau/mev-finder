@@ -12,7 +12,7 @@ contract AMM {
 
     function addliq(uint amt0, uint amt1) public {
         t0.transferFrom(msg.sender, address(this), amt0);
-        t0.transferFrom(msg.sender, address(this), amt1);
+        t1.transferFrom(msg.sender, address(this), amt1);
 
         uint b0 = t0.balanceOf(address(this));
         uint b1 = t1.balanceOf(address(this));

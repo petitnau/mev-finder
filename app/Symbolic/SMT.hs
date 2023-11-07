@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE BangPatterns #-}
 
-module Z3 where
+module Symbolic.SMT where
 
 import System.Process ( readProcessWithExitCode )
 import Data.List
@@ -238,5 +238,5 @@ smtcheck ds conds maxims = do
     writeFile "check.smt" smt
     x <- readProcessWithExitCode "z3" ["check.smt"] ""
     let (code, stdout, stderr) = x
+    putStrLn stdout
     return $ not ("unsat" `isInfixOf` stdout)
-    -- putStrLn stdout

@@ -1,6 +1,6 @@
 module Ast where
 
-import Uint256
+import Concrete.Uint256
 import Data.Composition
 import qualified Data.ByteArray as BA
 import Text.Hex ( encodeHex )
@@ -8,7 +8,7 @@ import qualified Data.Text as Text
 import Data.Function.Syntax
 import Data.Bits hiding (And, Or, Xor)
 import Prelude hiding (EQ, GT, LT)
-import Memory 
+import Concrete.Memory 
 import Env
 import Data.Maybe (fromJust)
 import Utils (printMem)

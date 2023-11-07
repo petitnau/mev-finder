@@ -21,6 +21,7 @@ data GState x b v m s = State
     , balances :: b
     , stack :: [v]
     , memory :: m
+    , returned :: m
     , storage :: s }
     deriving Show
 

@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
-module Uint256 where
+
+module Concrete.Uint256 where
 
 import Data.DoubleWord
 import Data.Bits

@@ -2,12 +2,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Memory where
+module Concrete.Memory where
 
 import qualified Data.ByteArray as BA
 import Data.DoubleWord
 import Data.Word
-import Uint256
+import Concrete.Uint256
 import Data.Parameterized (sndPair, viewSome)
 import Data.Maybe (fromJust)
 import Data.BitVector.Sized as BV

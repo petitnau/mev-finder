@@ -1,7 +1,7 @@
-module BytecodeDecode where
+module Solidity.BytecodeDecode where
 
 import Ast
-import Uint256
+import Concrete.Uint256
 import qualified Text.Hex as TH
 import qualified Data.Text as Text
 import qualified Data.ByteString as BS

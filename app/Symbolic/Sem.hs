@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module SymbolicSem where
+module Symbolic.Sem where
 
 import Data.Composition
 import qualified Data.ByteArray as BA
@@ -10,7 +10,7 @@ import qualified Data.Text as Text
 import Data.Function.Syntax
 import Data.Bits hiding (And, Or, Xor)
 import Prelude hiding (EQ, GT, LT)
-import Memory
+import Concrete.Memory
 import Env
 import Data.Maybe (fromJust)
 import Utils (printMem, (>>>=))
@@ -20,7 +20,7 @@ import Ast
 import Debug.Trace
 import qualified Data.List as L
 import Data.Either
-import Z3
+import Symbolic.SMT
 import Protolude.Functor
 import GenericSem
 import Data.Tuple.HT (mapSnd)
