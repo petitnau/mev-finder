@@ -25,10 +25,12 @@ executable mev-analysis
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules: Ast, Uint256, Utils, Memory, Env, BytecodeDecode, ConcreteSem, SymbolicSem, Z3, GenericSem, IConcrete, IERC20
+    other-modules: Ast, Utils, Env, Concrete.Memory, Concrete.Uint256, Solidity.BytecodeDecode, Concrete.Sem, Symbolic.Sem, Symbolic.SMT, 
+        GenericSem, Concrete.Interface, Concrete.IERC20, Concrete.Utils, Symbolic.Interface, Symbolic.MEV
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base, data-dword, composition, composition-extra, memory, keccak, hex-text, text, mtl, bytestring, process, protolude, bv-sized, parameterized-utils, utility-ht, extra
+    build-depends:    base, data-dword, composition, composition-extra, memory, keccak, hex-text, text, mtl, bytestring, process, protolude, 
+        bv-sized, parameterized-utils, utility-ht, extra
     hs-source-dirs:   app
     default-language: Haskell2010
