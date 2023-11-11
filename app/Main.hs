@@ -64,17 +64,19 @@ cmain :: IO ()
 cmain = do
     let eur = 0x230A1AC45690B9Ae1176389434610B9526d2f21b 
     let dkk = 0x330a1Ac45690b9ae1176389434610b9526D2f21B
-    let contract = "AMM"
+    let commit = 0x90722a86d157231f39e98219c0c6084bbf7ca4b33e924dd3bdec1864ee8d4af8
+    let contract = "HashLock" --AMM
     program <- decodeProgram <$> readFile ("examples/bin/" ++ contract ++ ".bin-runtime")
     let result = CI.baseState program
             -- (Call 1 "withdraw" [(TUint256, 3)] 0)
-            (Call 1 "addliq" [(TUint256, 350), (TUint256, 350)] 0)
-            & setBalance (0, 500)
-            & setBalance (1, 10)
-            & setERC20Balance (eur, 1, 500)
-            & setERC20Allowance (eur, 0, 1, 500)
-            & setERC20Balance (dkk, 1, 500)
-            & setERC20Allowance (dkk, 0, 1, 500)
+            --(Call 1 "addliq" [(TUint256, 350), (TUint256, 350)] 0)
+            (Call 1 "withdraw" [(Tbytes, commit)] 0)
+            -- & setBalance (0, 500)
+            -- & setBalance (1, 10)
+            -- & setERC20Balance (eur, 1, 500)
+            -- & setERC20Allowance (eur, 0, 1, 500)
+            -- & setERC20Balance (dkk, 1, 500)
+            -- & setERC20Allowance (dkk, 0, 1, 500)
             & CS.sem
     putStrLn "\n"
     putStrLn $ prettyResult result
@@ -82,4 +84,4 @@ cmain = do
     print $ getOutput [] result
 
 main :: IO ()
-main = smain
+main = cmain

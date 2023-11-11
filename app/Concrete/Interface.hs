@@ -17,12 +17,16 @@ import qualified Env
 
 import Prelude hiding (id)
 
-data Type =
-    TUint256
+data Type
+  = TUint256 
+  | Tbytes32
+  | Tbytes
     deriving Show
 
 typeId :: Type -> String
 typeId TUint256 = "uint256"
+typeId Tbytes32 = "bytes32"
+typeId Tbytes   = "bytes"
 
 data Call =
     Call Uint256 String [(Type, Uint256)] Uint256

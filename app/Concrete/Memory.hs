@@ -11,6 +11,7 @@ import Concrete.Uint256
 import Data.Parameterized (sndPair, viewSome)
 import Data.Maybe (fromJust)
 import Data.BitVector.Sized as BV
+import Crypto.Hash.Keccak (keccak256)
 
 takeExt :: BA.ByteArray a => Int -> a -> a
 takeExt n = padr n . BA.take n
@@ -24,6 +25,10 @@ applyPairs f = map (uncurry f) . uncurry zip . foldr (\a ~(x,y) -> (a:y,x)) ([],
 getUint256 :: BA.ByteArray a => a -> Int -> Uint256
 getUint256 ba offset =
     toUint256 . takeExt 32 . BA.drop offset $ ba
+
+hashMem :: BA.ByteArray a => a -> Uint256 -> Uint256 -> Uint256
+hashMem ba offset size =
+    toUint256 . keccak256 . BA.pack . BA.unpack . BA.take 32 . takeExt (touInt size) . BA.drop (touInt offset) $ ba
 
 toUint256 :: BA.ByteArray a => a -> Uint256
 toUint256 ba =

@@ -42,7 +42,7 @@ pop  s@State{stack = a:r}     = Right (s{stack=r}, a)
 pop  _ = Left Reverted
 pop2 s@State{stack = a:b:r}   = Right (s{stack=r}, a, b)
 pop2 _ = Left Reverted
-pop3 s@State{stack = a:b:c:r} = Right (s{stack=r}, a, b,c )
+pop3 s@State{stack = a:b:c:r} = Right (s{stack=r}, a, b, c)
 pop3 _ = Left Reverted
 
 popn :: Int -> GState x b v m s -> Either (GResult x b v m s) (GState x b v m s, [v])

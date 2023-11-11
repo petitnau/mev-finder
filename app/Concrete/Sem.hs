@@ -137,7 +137,7 @@ sem1 s = increasePC <$> case traceShowId $ s.program `opAt` traceShowId s.pc of
         SHL             -> sembop (flip (bvshl *. toNatural)) s
         SHR             -> sembop (flip (bvlshr *. toNatural)) s
         SAR             -> sembop (flip (bvashr *. toNatural)) s
-        SHA3            -> error "SHA3 TODO"
+        SHA3            -> sembop (hashMem s.memory) s
         ADDRESS         -> push s.id s
         BALANCE         -> semuop (getDefault 0 s.balances.eth) s
         ORIGIN          -> push s.id s
