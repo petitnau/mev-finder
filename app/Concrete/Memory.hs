@@ -28,7 +28,7 @@ getUint256 ba offset =
 
 hashMem :: BA.ByteArray a => a -> Uint256 -> Uint256 -> Uint256
 hashMem ba offset size =
-    toUint256 . keccak256 . BA.pack . BA.unpack . BA.take 32 . takeExt (touInt size) . BA.drop (touInt offset) $ ba
+    toUint256 . keccak256 . BA.pack . BA.unpack . takeExt (touInt size) . BA.drop (touInt offset) $ ba
 
 toUint256 :: BA.ByteArray a => a -> Uint256
 toUint256 ba =

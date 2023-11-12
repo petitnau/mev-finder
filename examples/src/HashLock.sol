@@ -8,8 +8,8 @@ contract HashLock {
         commit = _commit;
     }
     
-    function withdraw (bytes memory secret) public {
-        require (keccak256(secret) == commit);
+    function withdraw (bytes32 secret) public {
+        require (keccak256(abi.encodePacked(secret)) == commit);
         (bool succ,) = msg.sender.call{value: 10}("");
         require(succ);
     }

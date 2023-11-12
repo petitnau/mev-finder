@@ -70,8 +70,9 @@ cmain = do
     let result = CI.baseState program
             -- (Call 1 "withdraw" [(TUint256, 3)] 0)
             --(Call 1 "addliq" [(TUint256, 350), (TUint256, 350)] 0)
-            (Call 1 "withdraw" [(Tbytes, commit)] 0)
-            -- & setBalance (0, 500)
+            (Call 1 "withdraw" [(Tbytes32, commit)] 0)
+            & addStorage (0, 0xbd93a12ad13e81e9f6d5854d1e6163aae29ab3a1e1aae46441415b6338156780)
+            & setBalance (0, 500)
             -- & setBalance (1, 10)
             -- & setERC20Balance (eur, 1, 500)
             -- & setERC20Allowance (eur, 0, 1, 500)
