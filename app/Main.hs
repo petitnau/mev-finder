@@ -48,17 +48,32 @@ import Data.Functor ((<&>))
 liftR :: (SS.State -> a) -> ((Expr, SS.State, Integer) -> [a])
 liftR f = \(_,s,_) -> [f s]
 
+baseAxioms :: [Expr]
+baseAxioms =
+    [ Var "Id" `eq` word 0 ]
+
+memPoolAxioms :: Program -> [Expr]
+memPoolAxioms p = 
+            let result =
+                    CI.baseState p
+                    (Call 1 "withdraw" [(Tbytes32, 0x90722a86d157231f39e98219c0c6084bbf7ca4b33e924dd3bdec1864ee8d4af8)] 0)
+                    & addStorage (0, 0xbd93a12ad13e81e9f6d5854d1e6163aae29ab3a1e1aae46441415b6338156780)
+                    & setBalance (0, 500)
+                    & CS.sem
+            in getConstraints result
+
 smain :: IO ()
 smain = do
     let attackers = [word 1]
-    let axioms = buildAxioms attackers
+    let customAxioms = buildAxioms attackers
             [ (word 0, word 500)
             , (word 1, word 1) ]
             [ ]
-            -- (UnOp Hash(LBitVec 512 0 +++ LBitVec 256 1 +++ LBitVec 256 0), word 10) 
-    let contract = "Password"
+    let contract = "HashLock"
     program <- decodeProgram <$> readFile ("examples/bin/" ++ contract ++ ".bin-runtime")
-    check 1 (liftR $ hasMEV attackers) (liftR $ extractedValue attackers) axioms program >>= print
+
+    let axioms = (memPoolAxioms program) ++ baseAxioms
+    check 1 (liftR $ hasMEV attackers) (liftR $ extractedValue attackers) axioms customAxioms program >>= print
 
 cmain :: IO ()
 cmain = do
@@ -68,7 +83,6 @@ cmain = do
     let contract = "HashLock" --AMM
     program <- decodeProgram <$> readFile ("examples/bin/" ++ contract ++ ".bin-runtime")
     let result = CI.baseState program
-            -- (Call 1 "withdraw" [(TUint256, 3)] 0)
             --(Call 1 "addliq" [(TUint256, 350), (TUint256, 350)] 0)
             (Call 1 "withdraw" [(Tbytes32, commit)] 0)
             & addStorage (0, 0xbd93a12ad13e81e9f6d5854d1e6163aae29ab3a1e1aae46441415b6338156780)
@@ -85,4 +99,4 @@ cmain = do
     print $ getOutput [] result
 
 main :: IO ()
-main = cmain
+main = smain

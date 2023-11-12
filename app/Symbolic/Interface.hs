@@ -41,10 +41,6 @@ baseDecls =
     , DeclVar "Storage" (TArray tword tword)
     , DeclFun "Hash" tmem tword ]
 
-baseAxioms :: [Expr]
-baseAxioms =
-    [ Var "Id" `eq` word 0 ]
-
 declsCall :: Integer -> [Decl]
 declsCall i =
     [ DeclVar ("Caller" ++ show i) tword
@@ -80,8 +76,8 @@ check_ depth state decls axioms checks maxims customAxioms i = do
                 check_ (depth-1) state' decls' axioms' checks maxims customAxioms (i+1))
             return $ or results
 
-check :: Integer -> ((Expr, State, Integer) -> [Expr]) -> ((Expr, State, Integer) -> [Expr]) -> (Integer -> [Expr]) -> Program -> IO Bool
-check depth checks maxims customAxioms program =
+check :: Integer -> ((Expr, State, Integer) -> [Expr]) -> ((Expr, State, Integer) -> [Expr]) -> [Expr] -> (Integer -> [Expr]) -> Program -> IO Bool
+check depth checks maxims baseAxioms customAxioms program =
     check_ depth (baseState program) baseDecls baseAxioms checks maxims customAxioms 1
 
 storeAxioms :: Expr -> [(Expr, Expr)] -> [Expr]
