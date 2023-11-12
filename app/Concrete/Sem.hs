@@ -26,14 +26,21 @@ import GenericSem
 import Concrete.IERC20
 import Data.Either.Extra
 import Control.Monad (when)
+import Symbolic.SMT (Expr(..), eq, (@!))
 
 data Balance = Balance
     { eth :: Env Uint256 Uint256
     , tok :: Env Uint256 ERC20 }
     deriving Show
 
-type State  = GState  () Balance Uint256 BA.Bytes (Env Uint256 Uint256)
-type Result = GResult () Balance Uint256 BA.Bytes (Env Uint256 Uint256)
+data Extra = Extra { constraints :: [Expr] }
+    deriving Show
+
+(##) :: State -> Expr -> State
+(##) s e = s{extra=s.extra{constraints=e:s.extra.constraints}}
+
+type State  = GState  Extra Balance Uint256 BA.Bytes (Env Uint256 Uint256)
+type Result = GResult Extra Balance Uint256 BA.Bytes (Env Uint256 Uint256)
 
 prettyState :: State -> String
 prettyState s =
@@ -43,6 +50,7 @@ prettyState s =
     "-- STORAGE  --" ++ "\n" ++ show s.storage ++ "\n" ++
     "--  RETURN  --" ++ (printMem . Text.unpack . encodeHex . BA.pack . BA.unpack $ s.returned) ++ "\n" ++
     "--   ETH    --" ++ "\n" ++ show s.balances.eth ++ "\n" ++
+    "-- CONSTRAINTS --" ++ "\n" ++ show s.extra ++ "\n" ++
     L.intercalate "\n" (zipWith (\i a -> "--  TOK " ++ show i ++ "   --" ++ "\n" ++ show (fromJust $ Env.get s.balances.tok a)) [1..] (Env.domain s.balances.tok))
 
 prettyResult :: Result -> String
@@ -137,7 +145,7 @@ sem1 s = increasePC <$> case traceShowId $ s.program `opAt` traceShowId s.pc of
         SHL             -> sembop (flip (bvshl *. toNatural)) s
         SHR             -> sembop (flip (bvlshr *. toNatural)) s
         SAR             -> sembop (flip (bvashr *. toNatural)) s
-        SHA3            -> sembop (hashMem s.memory) s
+        SHA3            -> pop2 s >>= \(s, off, sz) -> let (k, v) = hashMem s.memory off sz in push v (s ## eq (Var "hashfn" @! (LInt (touInteger k))) (LInt (touInteger v)))
         ADDRESS         -> push s.id s
         BALANCE         -> semuop (getDefault 0 s.balances.eth) s
         ORIGIN          -> push s.id s

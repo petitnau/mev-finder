@@ -14,19 +14,18 @@ import qualified Data.String as S
 import qualified Data.List as L
 import qualified Data.ByteArray as BA
 import qualified Env 
+import Symbolic.SMT (Expr(..))
 
 import Prelude hiding (id)
 
 data Type
   = TUint256 
   | Tbytes32
-  | Tbytes
     deriving Show
 
 typeId :: Type -> String
 typeId TUint256 = "uint256"
 typeId Tbytes32 = "bytes32"
-typeId Tbytes   = "bytes"
 
 data Call =
     Call Uint256 String [(Type, Uint256)] Uint256
@@ -55,7 +54,7 @@ baseState prog c@(Call snd fn par val) = State
     , memory = BA.empty
     , returned = BA.empty
     , storage = Env.empty
-    , extra = () }
+    , extra = Extra { constraints = [] } }
 
 setBalance :: (Uint256, Uint256) -> State -> State
 setBalance kv s =
@@ -81,3 +80,6 @@ getOutput :: [Type] -> Result -> [Uint256]
 getOutput [] (Returned _) = []
 getOutput (TUint256:ts) (Returned (m, s)) = Memory.getUint256 m 0:getOutput ts (Returned (BA.drop 32 m, s))
 
+getConstraints :: Result -> [Expr]
+getConstraints (Returned (_, s)) = s.extra.constraints
+getConstraints Reverted = []

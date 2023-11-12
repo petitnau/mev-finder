@@ -26,9 +26,11 @@ getUint256 :: BA.ByteArray a => a -> Int -> Uint256
 getUint256 ba offset =
     toUint256 . takeExt 32 . BA.drop offset $ ba
 
-hashMem :: BA.ByteArray a => a -> Uint256 -> Uint256 -> Uint256
+hashMem :: BA.ByteArray a => a -> Uint256 -> Uint256 -> (Uint256, Uint256)
 hashMem ba offset size =
-    toUint256 . keccak256 . BA.pack . BA.unpack . takeExt (touInt size) . BA.drop (touInt offset) $ ba
+    let k = toUint256 . takeExt (touInt size) . BA.drop (touInt offset) $ ba in
+    let v = toUint256 . keccak256 . fromUint256 $ k in
+        (k, v)
 
 toUint256 :: BA.ByteArray a => a -> Uint256
 toUint256 ba =
