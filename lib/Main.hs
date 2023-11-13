@@ -59,6 +59,7 @@ memPoolAxioms p =
                     (Call 1 "withdraw" [(Tbytes32, 0x90722a86d157231f39e98219c0c6084bbf7ca4b33e924dd3bdec1864ee8d4af8)] 0)
                     & addStorage (0, 0xbd93a12ad13e81e9f6d5854d1e6163aae29ab3a1e1aae46441415b6338156780)
                     & setBalance (0, 500)
+                    & setBalance (1, 1)
                     & CS.sem
             in getConstraints result
 
@@ -72,8 +73,8 @@ smain = do
     let contract = "HashLock"
     program <- decodeProgram <$> readFile ("examples/bin/" ++ contract ++ ".bin-runtime")
 
-    let axioms = (memPoolAxioms program) ++ baseAxioms
-    check 1 (liftR $ hasMEV attackers) (liftR $ extractedValue attackers) axioms customAxioms program >>= print
+    let mAxioms = memPoolAxioms program
+    check 1 (liftR $ hasMEV attackers) (liftR $ extractedValue attackers) mAxioms baseAxioms customAxioms program >>= print
 
 cmain :: IO ()
 cmain = do

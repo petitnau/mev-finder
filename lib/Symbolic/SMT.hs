@@ -10,6 +10,7 @@ import Utils
 import Data.Function ((&))
 import Data.Functor ((<&>))
 import Debug.Trace
+import System.Directory (doesFileExist)
 
 data DeclType
     = TInt
@@ -47,7 +48,7 @@ instance Show UnOp where
         BV2Nat -> "bv2nat"
         Not -> "bvnot"
         LNot -> "not"
-        Hash -> "Hash"
+        Hash -> "hashfn"
 
 data BinOp
     = Add | Mul | Sub | Div | SDiv | Mod | SMod | Exp | Byte | Shl | Shr | Sar
@@ -223,19 +224,29 @@ normalize ds (TerOp op e1 e2 e3) = do
 normalize ds (ForAll v t e) =
     ForAll v t <$> normalize ds e
 
-smtcheck :: [Decl] -> [Expr] -> [Expr] -> IO Bool
-smtcheck ds conds maxims = do
+smtcheck :: [Decl] -> [Expr] -> [Expr] -> [Expr] -> IO Bool
+smtcheck ds hashConds conds maxims = do
     normconds <- mapM (normalize ds) conds
     normmaxims <- mapM (normalize ds) maxims
     let smt = unlines (
             map show ds ++
-            map (\cond -> "(assert " ++ show cond ++ ")") normconds ++
+            ["(assert (forall((hashfn (Array (_ BitVec 1024) (_ BitVec 256))))"] ++ 
+            ["\t(=>"] ++
+            ["\t\t(and"] ++
+            map (\hcond -> "\t\t\t" ++ show hcond ) hashConds ++
+            ["\t\t)"] ++
+            ["\t\t(and"] ++
+            map (\cond -> "\t\t\t" ++ show cond ) normconds ++
+            ["\t\t)))"] ++
+            [")"] ++
             map (\expr -> "(maximize " ++ show expr ++ ")") normmaxims ++
             ["(check-sat)"] ++
             -- ["(get-model)"] ++
             map (\expr -> "(eval " ++ show expr ++ ")") normmaxims
             )
+    --writeFile (if doesFileExist "check.smt" then "check1.smt" else "check.smt") smt
     writeFile "check.smt" smt
+
     x <- readProcessWithExitCode "z3" ["check.smt"] ""
     let (code, stdout, stderr) = x
     putStrLn stdout

@@ -39,7 +39,7 @@ baseDecls =
     , DeclVar "Timestamp" tword
     , DeclVar "Balances" (TArray tword tword)
     , DeclVar "Storage" (TArray tword tword)
-    , DeclFun "Hash" tmem tword ]
+    ]
 
 declsCall :: Integer -> [Decl]
 declsCall i =
@@ -53,18 +53,19 @@ axiomsCall i =
     [ Var ("CallData" ++ show i) `eq` (Var ("CallData" ++ show i) `bvand` ((mem 0 `bvsub` mem 1) `bvshl` (mem 1024 `bvsub` ((LBitVec 768 0 +++ Var ("CallDataSize" ++ show i)) `bvmul` mem 8))))
     , ForAll "x" tword ((Var "Balances" @! Var "x") `bvult` word 0x100000000000000000000000000000000) ]
 
-check_ :: Integer -> State -> [Decl] -> [Expr] -> ((Expr, State, Integer) -> [Expr]) -> ((Expr, State, Integer) -> [Expr]) -> (Integer -> [Expr]) -> Integer -> IO Bool
-check_ 0 state decls axioms checks maxims customAxioms i = return False
-check_ depth state decls axioms checks maxims customAxioms i = do
+check_ :: Integer -> State -> [Decl] -> [Expr] -> [Expr] -> ((Expr, State, Integer) -> [Expr]) -> ((Expr, State, Integer) -> [Expr]) -> (Integer -> [Expr]) -> Integer -> IO Bool
+check_ 0 state decls memAxioms axioms checks maxims customAxioms i = return False
+check_ depth state decls memAxioms axioms checks maxims customAxioms i = do
     putStrLn $ "Checking depth: " ++ show i
     let decls'  = decls  ++ declsCall i
     let axioms' = axioms ++ axiomsCall i
     let results = mapMaybe (\case Returned r -> Just r; _ -> Nothing) (sem state)
+    print $ length results
     let constraintss2 = map (\(r,s) -> (r, s, (checks (r,s,i) ++ customAxioms i ++ axioms' ++ s.extra.constraints, maxims (r, s, i)))) results
-    anyM (uncurry (smtcheck decls') . thd3) constraintss2 `orM`
+    anyM (uncurry (smtcheck decls' memAxioms) . thd3) constraintss2 `orM`
         do
             let constraintss = map (\(r,s) -> (r, s, (customAxioms i ++ axioms' ++ s.extra.constraints, []))) results
-            feasible <- filterM (uncurry (smtcheck decls') . thd3) constraintss
+            feasible <- filterM (uncurry (smtcheck decls' memAxioms) . thd3) constraintss
             results <- forM feasible (\(r, s, _) ->
                 let state' = s{
                     caller = Var ("Caller" ++ show (i+1)),
@@ -73,12 +74,12 @@ check_ depth state decls axioms checks maxims customAxioms i = do
                     pc = 0,
                     memory = mem 0,
                     extra=s.extra{callDataSize = Var ("CallDataSize" ++ show (i+1))} } in
-                check_ (depth-1) state' decls' axioms' checks maxims customAxioms (i+1))
+                check_ (depth-1) state' decls' memAxioms axioms' checks maxims customAxioms (i+1))
             return $ or results
 
-check :: Integer -> ((Expr, State, Integer) -> [Expr]) -> ((Expr, State, Integer) -> [Expr]) -> [Expr] -> (Integer -> [Expr]) -> Program -> IO Bool
-check depth checks maxims baseAxioms customAxioms program =
-    check_ depth (baseState program) baseDecls baseAxioms checks maxims customAxioms 1
+check :: Integer -> ((Expr, State, Integer) -> [Expr]) -> ((Expr, State, Integer) -> [Expr]) -> [Expr] -> [Expr] -> (Integer -> [Expr]) -> Program -> IO Bool
+check depth checks maxims memAxioms baseAxioms customAxioms program =
+    check_ depth (baseState program) baseDecls memAxioms baseAxioms checks maxims customAxioms 1
 
 storeAxioms :: Expr -> [(Expr, Expr)] -> [Expr]
 storeAxioms e = map (\(k,v) -> (e @! k) `eq` v)

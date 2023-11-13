@@ -145,7 +145,7 @@ sem1 s = increasePC <$> case traceShowId $ s.program `opAt` traceShowId s.pc of
         SHL             -> sembop (flip (bvshl *. toNatural)) s
         SHR             -> sembop (flip (bvlshr *. toNatural)) s
         SAR             -> sembop (flip (bvashr *. toNatural)) s
-        SHA3            -> pop2 s >>= \(s, off, sz) -> let (k, v) = hashMem s.memory off sz in push v (s ## eq (Var "hashfn" @! (LInt (touInteger k))) (LInt (touInteger v)))
+        SHA3            -> pop2 s >>= \(s, off, sz) -> let (k, v) = hashMem s.memory off sz in push v (s ## eq (Var "hashfn" @! (LBitVec 1024 (touInteger k))) (LBitVec 256 (touInteger v)))
         ADDRESS         -> push s.id s
         BALANCE         -> semuop (getDefault 0 s.balances.eth) s
         ORIGIN          -> push s.id s
